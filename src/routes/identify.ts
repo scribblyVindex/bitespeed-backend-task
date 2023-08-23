@@ -31,19 +31,13 @@ router.post("/", async (req: Request, res: Response) => {
     updatedAt: true,
   };
 
+  let response: responseFields = {};
+
   const contacts = await prisma.contact.findMany({
     where: {
       OR: [
-        {
-          email: {
-            equals: email,
-          },
-        },
-        {
-          phoneNumber: {
-            equals: phoneNumber?.toString(),
-          },
-        },
+        { email: { equals: email } },
+        { phoneNumber: { equals: phoneNumber?.toString() } },
       ],
     },
     orderBy: {
@@ -51,6 +45,27 @@ router.post("/", async (req: Request, res: Response) => {
     },
     select: contactSelect,
   });
+
+  if (contacts.length == 0 && (email || phoneNumber)) {
+    let data: any = {
+      linkPrecedence: "primary",
+    };
+    if (email) data.email = email;
+    if (phoneNumber) data.phoneNumber = phoneNumber.toString();
+    const createContact = await prisma.contact.create({
+      data: data,
+    });
+
+    response = {
+      primaryContactId: createContact!.id!,
+      secondaryContactIds: [],
+    };
+    if (createContact.phoneNumber)
+      response.phoneNumbers = [createContact.phoneNumber];
+    if (createContact.email) response.emails = [createContact.email];
+  }
+
+  if (response.primaryContactId) res.status(200).json({ contact: response });
 });
 
 module.exports = router;
