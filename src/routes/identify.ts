@@ -44,10 +44,6 @@ const updateContactLinkPrecedence = async (
   await Promise.all(updatePromises);
 };
 
-// const userInclude = Prisma.validator<Prisma.ContactInclude>()({
-//   cars: true,
-// });
-
 const contactInclude: Prisma.ContactInclude = {
   linkedSecondaryContacts: {
     orderBy: {
@@ -143,33 +139,39 @@ router.post("/", async (req: Request, res: Response) => {
       response = generateResponseObject(exactMatch);
       res.status(200).json({ contact: response });
     } else {
-      let allSortedPrimaryContacts = matchingContacts
-        .map((contact) => {
-          if (contact.linkPrecedence === "primary") return contact;
-          else return contact.linkedTo;
-        })
-        .sort(
-          (a: any, b: any) => a.createdAt.getTime() - b.createdAt.getTime()
-        );
-      if (email && phoneNumber) {
+      let allSortedPrimaryContacts: any = [];
+
+      for (const contact of matchingContacts) {
+        let contactToPush: any;
+        if (contact.linkPrecedence === "primary") contactToPush = contact;
+        else contactToPush = contact.linkedTo;
+        if (
+          !allSortedPrimaryContacts.find(
+            (contact2: any) => contact2.id === contactToPush.id
+          )
+        ) {
+          allSortedPrimaryContacts.push(contactToPush);
+        }
+      }
+      allSortedPrimaryContacts.sort(
+        (a: any, b: any) => a.createdAt.getTime() - b.createdAt.getTime()
+      );
+
+      if (email && phoneNumber && allSortedPrimaryContacts.length > 1) {
         const newPrimaryContactId = allSortedPrimaryContacts[0]?.id;
+
         for (const primaryContact of allSortedPrimaryContacts.slice(1)) {
           await updateContactLinkPrecedence(
             primaryContact,
             newPrimaryContactId
           );
         }
-        const secondaryContact = await prisma.contact.create({
-          data: {
-            email,
-            phoneNumber: phoneNumber.toString(),
-            linkPrecedence: "secondary",
-            linkedTo: { connect: { id: newPrimaryContactId } },
-          },
+        const updatedPrimaryComtact = await prisma.contact.findUnique({
+          where: { id: newPrimaryContactId },
           include: contactInclude,
         });
 
-        response = generateResponseObject(secondaryContact);
+        response = generateResponseObject(updatedPrimaryComtact);
         res.status(200).json({ contact: response });
       } else {
         response = generateResponseObject(allSortedPrimaryContacts[0]);
