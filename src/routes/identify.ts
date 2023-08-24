@@ -57,15 +57,27 @@ router.post("/", async (req: Request, res: Response) => {
     if (
       contacts.find(
         (contact) =>
-          contact.email === email ||
-          contact.phoneNumber === phoneNumber?.toString()
-      ) &&
-      !contacts.find(
-        (contact) =>
-          contact.email === email &&
-          contact.phoneNumber === phoneNumber?.toString()
+          !(
+            contact.email === email &&
+            contact.phoneNumber === phoneNumber?.toString()
+          )
       )
     ) {
+      // Primary contact becomes secondary contact
+      if (email && phoneNumber) {
+        let commonPrimaryContacts = contacts.filter(
+          (contact) => contact.linkPrecedence === "primary"
+        );
+        if (commonPrimaryContacts.length > 1) {
+          for (let i = 1; i < commonPrimaryContacts.length; ++i) {
+            let { id } = commonPrimaryContacts[i];
+            let modifiedContact = await prisma.contact.update({
+              where: { id: id },
+              data: { linkPrecedence: "secondary" },
+            });
+          }
+        }
+      }
       let data: any = { linkPrecedence: "secondary", linkedId: contacts[0].id };
       if (email) data.email = email;
       if (phoneNumber) data.phoneNumber = phoneNumber.toString();
@@ -78,7 +90,7 @@ router.post("/", async (req: Request, res: Response) => {
       secondaryContactIds.push(createContact.id);
     }
 
-    //regardless of creation of secondary contact
+    // Regardless of creation of secondary contact
     for (let i = 1; i < contacts.length; ++i) {
       let { id, email, phoneNumber } = contacts[i];
       secondaryContactIds.push(id);
@@ -109,8 +121,6 @@ router.post("/", async (req: Request, res: Response) => {
       response.phoneNumbers = [createContact.phoneNumber];
     if (createContact.email) response.emails = [createContact.email];
   }
-
-  // Create new secondary contact if a common email/phoneNumber is found
 
   if (response.primaryContactId) res.status(200).json({ contact: response });
   else res.status(400).json({ error: "Internal server error!" });
