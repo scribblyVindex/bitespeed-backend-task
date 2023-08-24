@@ -11,14 +11,14 @@ datasource db {
 }
 
 model Contact {
-  id             Int       @id @default(autoincrement())
-  phoneNumber    String?
-  email          String?
-  linkedId       Int?
-  linkPrecedence String    @default("primary")
-  deletedAt      DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @default(now())
-  // linkedSecondaryContacts Contact[] @relation("contactLink")
-  // linkedTo                Contact?  @relation("contactLink", fields: [linkedId], references: [id], onDelete: SetNull)
+  id                      Int       @id @default(autoincrement())
+  phoneNumber             String?
+  email                   String?
+  linkedId                Int?
+  linkPrecedence          String    @default("primary")
+  deletedAt               DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @default(now())
+  linkedSecondaryContacts Contact[] @relation("contactLink")
+  linkedTo                Contact?  @relation("contactLink", fields: [linkedId], references: [id], onDelete: SetNull)
 }
