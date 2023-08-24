@@ -49,21 +49,29 @@ router.post("/", async (req: Request, res: Response) => {
   // Aggregate and return emails and phoneNumbers from all matching contacts
   if (contacts.length > 0) {
     response.primaryContactId = contacts[0].id;
-    let emails: string[] = [];
-    let phoneNumbers: string[] = [];
-    let secondaryContactIds: number[] = [];
-
+    let emails = new Set<string>();
+    let phoneNumbers = new Set<string>();
+    let secondaryContactIds = new Set<number>();
     // If a common field found and if both fields are not the same, create a new secondary contact
     if (
-      contacts.find(
+      !contacts.find(
         (contact) =>
-          !(
-            contact.email === email &&
-            contact.phoneNumber === phoneNumber?.toString()
-          )
+          contact.email === email &&
+          contact.phoneNumber === phoneNumber?.toString()
       )
     ) {
       // Primary contact becomes secondary contact
+
+      console.log(
+        contacts.find(
+          (contact) =>
+            !(
+              contact.email === email &&
+              contact.phoneNumber === phoneNumber?.toString()
+            )
+        )
+      );
+
       if (email && phoneNumber) {
         let commonPrimaryContacts = contacts.filter(
           (contact) => contact.linkPrecedence === "primary"
@@ -73,8 +81,12 @@ router.post("/", async (req: Request, res: Response) => {
             let { id } = commonPrimaryContacts[i];
             let modifiedContact = await prisma.contact.update({
               where: { id: id },
-              data: { linkPrecedence: "secondary" },
+              data: {
+                linkPrecedence: "secondary",
+                linkedId: commonPrimaryContacts[0].id,
+              },
             });
+            secondaryContactIds.add(id);
           }
         }
       }
@@ -84,22 +96,22 @@ router.post("/", async (req: Request, res: Response) => {
       const createContact = await prisma.contact.create({
         data: data,
       });
-      if (createContact.email) emails.push(createContact.email);
+      if (createContact.email) emails.add(createContact.email);
       if (createContact.phoneNumber)
-        phoneNumbers.push(createContact.phoneNumber);
-      secondaryContactIds.push(createContact.id);
+        phoneNumbers.add(createContact.phoneNumber);
+      secondaryContactIds.add(createContact.id);
     }
 
     // Regardless of creation of secondary contact
-    for (let i = 1; i < contacts.length; ++i) {
-      let { id, email, phoneNumber } = contacts[i];
-      secondaryContactIds.push(id);
-      if (email) emails.push(email);
-      if (phoneNumber) phoneNumbers.push(phoneNumber);
+    for (let i = 0; i < contacts.length; ++i) {
+      let { id, email, phoneNumber, linkPrecedence } = contacts[i];
+      if (linkPrecedence === "secondary") secondaryContactIds.add(id);
+      if (email) emails.add(email);
+      if (phoneNumber) phoneNumbers.add(phoneNumber);
     }
-    response.emails = emails;
-    response.phoneNumbers = phoneNumbers;
-    response.secondaryContactIds = secondaryContactIds;
+    response.emails = Array.from(emails);
+    response.phoneNumbers = Array.from(phoneNumbers);
+    response.secondaryContactIds = Array.from(secondaryContactIds);
   }
 
   // Create new contact if no matching contacts are found
