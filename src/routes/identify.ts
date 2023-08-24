@@ -46,6 +46,24 @@ router.post("/", async (req: Request, res: Response) => {
     select: contactSelect,
   });
 
+  // Aggregate and return emails and phoneNumbers from all matching contacts
+  if (contacts.length > 0) {
+    let emails: string[] = [];
+    let phoneNumbers: string[] = [];
+    let secondaryContactIds: number[] = [];
+    for (let i = 1; i < contacts.length; ++i) {
+      let { id, email, phoneNumber } = contacts[i];
+      secondaryContactIds.push(id);
+      if (email) emails.push(email);
+      if (phoneNumber) phoneNumbers.push(phoneNumber);
+    }
+    response.primaryContactId = contacts[0].id;
+    response.emails = emails;
+    response.phoneNumbers = phoneNumbers;
+    response.secondaryContactIds = secondaryContactIds;
+  }
+
+  // Create new contact if no matching contacts are found
   if (contacts.length == 0 && (email || phoneNumber)) {
     let data: any = {
       linkPrecedence: "primary",
@@ -65,7 +83,10 @@ router.post("/", async (req: Request, res: Response) => {
     if (createContact.email) response.emails = [createContact.email];
   }
 
+  // Create new secondary contact if a common email/phoneNumber is found
+
   if (response.primaryContactId) res.status(200).json({ contact: response });
+  else res.status(400).json({ error: "Internal server error!" });
 });
 
 module.exports = router;
