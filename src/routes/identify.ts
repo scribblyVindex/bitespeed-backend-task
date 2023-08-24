@@ -1,24 +1,25 @@
 import express, { Express, Request, Response, Router } from "express";
-import { Prisma, PrismaClient } from "@prisma/client";
-
+import { Prisma, PrismaClient, Contact } from "@prisma/client";
 const prisma: PrismaClient = new PrismaClient();
-
 const router: Router = Router();
 
-interface requestFields {
+/// ----------------------------------------------------------------------------------------------------------------------------------------------
+type requestFields = {
   email?: string;
   phoneNumber?: number;
-}
+};
 
-interface responseFields {
+type responseFields = {
   primaryContactId?: number;
   emails?: string[];
   phoneNumbers?: string[];
   secondaryContactIds?: number[];
-}
+};
 
+/// ----------------------------------------------------------------------------------------------------------------------------------------------
+// Utility functions
 const updateContactLinkPrecedence = async (
-  contact: any,
+  contact: Contact,
   newPrimaryContactId?: number
 ) => {
   const updatedContact = await prisma.contact.update({
@@ -44,22 +45,7 @@ const updateContactLinkPrecedence = async (
   await Promise.all(updatePromises);
 };
 
-const contactInclude: Prisma.ContactInclude = {
-  linkedSecondaryContacts: {
-    orderBy: {
-      createdAt: "asc",
-    },
-    include: {
-      linkedTo: true,
-    },
-  },
-  linkedTo: {
-    include: {
-      linkedSecondaryContacts: true,
-    },
-  },
-};
-
+//
 const generateResponseObject = (contact: any) => {
   let response: responseFields = {};
 
@@ -70,8 +56,8 @@ const generateResponseObject = (contact: any) => {
   if (contact.linkPrecedence === "primary") {
     const { id, email, phoneNumber } = contact;
     response.primaryContactId = id;
-    emails.add(email);
-    phoneNumbers.add(phoneNumber);
+    if (email) emails.add(email);
+    if (phoneNumber) phoneNumbers.add(phoneNumber);
     let relatedContacts = contact.linkedSecondaryContacts;
     if (relatedContacts.length > 0) {
       for (const contact of relatedContacts) {
@@ -106,6 +92,23 @@ const generateResponseObject = (contact: any) => {
   return response;
 };
 
+// Include statement for fetching contacts
+const contactInclude: Prisma.ContactInclude = {
+  linkedSecondaryContacts: {
+    orderBy: {
+      createdAt: "asc",
+    },
+    include: {
+      linkedTo: true,
+    },
+  },
+  linkedTo: {
+    include: {
+      linkedSecondaryContacts: true,
+    },
+  },
+};
+
 router.post("/", async (req: Request, res: Response) => {
   const { email, phoneNumber }: requestFields = req.body;
 
@@ -124,10 +127,6 @@ router.post("/", async (req: Request, res: Response) => {
     include: contactInclude,
   });
 
-  let emails = new Set<string>();
-  let phoneNumbers = new Set<string>();
-  let secondaryContactIds = new Set<number>();
-
   if (matchingContacts.length > 0) {
     let exactMatch = matchingContacts.find(
       (contact) =>
@@ -139,22 +138,23 @@ router.post("/", async (req: Request, res: Response) => {
       response = generateResponseObject(exactMatch);
       res.status(200).json({ contact: response });
     } else {
-      let allSortedPrimaryContacts: any = [];
+      let allSortedPrimaryContacts: Contact[] = [];
 
       for (const contact of matchingContacts) {
         let contactToPush: any;
         if (contact.linkPrecedence === "primary") contactToPush = contact;
         else contactToPush = contact.linkedTo;
         if (
-          !allSortedPrimaryContacts.find(
-            (contact2: any) => contact2.id === contactToPush.id
+          !allSortedPrimaryContacts.some(
+            (contact2: Contact) => contact2.id === contactToPush.id
           )
         ) {
           allSortedPrimaryContacts.push(contactToPush);
         }
       }
       allSortedPrimaryContacts.sort(
-        (a: any, b: any) => a.createdAt.getTime() - b.createdAt.getTime()
+        (a: Contact, b: Contact) =>
+          a.createdAt.getTime() - b.createdAt.getTime()
       );
 
       if (email && phoneNumber && allSortedPrimaryContacts.length > 1) {
@@ -166,12 +166,12 @@ router.post("/", async (req: Request, res: Response) => {
             newPrimaryContactId
           );
         }
-        const updatedPrimaryComtact = await prisma.contact.findUnique({
+        const updatedPrimaryContact = await prisma.contact.findUnique({
           where: { id: newPrimaryContactId },
           include: contactInclude,
         });
 
-        response = generateResponseObject(updatedPrimaryComtact);
+        response = generateResponseObject(updatedPrimaryContact);
         res.status(200).json({ contact: response });
       } else {
         response = generateResponseObject(allSortedPrimaryContacts[0]);
@@ -181,8 +181,8 @@ router.post("/", async (req: Request, res: Response) => {
   }
 
   // Create new contact if no matching contacts are found
-  if (matchingContacts?.length == 0 && email && phoneNumber) {
-    let data: any = {
+  else if (matchingContacts?.length == 0 && email && phoneNumber) {
+    let data: Prisma.ContactCreateInput = {
       linkPrecedence: "primary",
     };
     if (email) data.email = email;
@@ -199,9 +199,9 @@ router.post("/", async (req: Request, res: Response) => {
       response.phoneNumbers = [createContact.phoneNumber];
     if (createContact.email) response.emails = [createContact.email];
     res.status(200).json({ contact: response });
+  } else {
+    res.status(400).json({ error: "Internal server error!" });
   }
-
-  //   res.status(400).json({ error: "Internal server error!" });
 });
 
 module.exports = router;
