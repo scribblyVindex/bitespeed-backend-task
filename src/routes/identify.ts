@@ -11,7 +11,7 @@ const router: Router = Router();
 
 type requestFields = {
   email?: string;
-  phoneNumber?: number;
+  phoneNumber?: any;
 };
 
 type responseFields = {
@@ -114,7 +114,10 @@ const contactInclude: Prisma.ContactInclude = {
 // Defining the endpoint below
 
 router.post("/", async (req: Request, res: Response) => {
-  const { email, phoneNumber }: requestFields = req.body;
+  let { email, phoneNumber }: requestFields = req.body;
+
+  if (email) email = email.trim();
+  if (phoneNumber) phoneNumber = phoneNumber.toString().trim();
 
   let response: responseFields = {};
 
