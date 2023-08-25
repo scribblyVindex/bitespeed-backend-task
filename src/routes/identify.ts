@@ -134,80 +134,65 @@ router.post("/", async (req: Request, res: Response) => {
 
   // Matching contacts found
   if (matchingContacts.length > 0) {
-    // Check if exact match found
-    let exactMatch = matchingContacts.find(
-      (contact) =>
-        contact.email === email &&
-        contact.phoneNumber === phoneNumber?.toString()
+    let allSortedPrimaryContacts: Contact[] = [];
+
+    // Get all primary contacts (some nested within secondary contacts). Sort with creation Date
+    for (const contact of matchingContacts) {
+      let primaryContact: any;
+      if (contact.linkPrecedence === "primary") primaryContact = contact;
+      else primaryContact = contact.linkedTo;
+      if (
+        !allSortedPrimaryContacts.some(
+          (contact2: Contact) => contact2.id === primaryContact.id
+        )
+      ) {
+        allSortedPrimaryContacts.push(primaryContact);
+      }
+    }
+    allSortedPrimaryContacts.sort(
+      (a: Contact, b: Contact) => a.createdAt.getTime() - b.createdAt.getTime()
     );
 
-    if (exactMatch) {
-      response = generateResponseObject(exactMatch);
-      res.status(200).json({ contact: response });
-    } else {
-      let allSortedPrimaryContacts: Contact[] = [];
+    if (email && phoneNumber) {
+      const newPrimaryContactId = allSortedPrimaryContacts[0]?.id;
 
-      for (const contact of matchingContacts) {
-        let contactToPush: any;
-        if (contact.linkPrecedence === "primary") contactToPush = contact;
-        else contactToPush = contact.linkedTo;
-        if (
-          !allSortedPrimaryContacts.some(
-            (contact2: Contact) => contact2.id === contactToPush.id
-          )
-        ) {
-          allSortedPrimaryContacts.push(contactToPush);
-        }
+      // Convert primary contact into secondary
+      for (const primaryContact of allSortedPrimaryContacts.slice(1)) {
+        await updateContactLinkPrecedence(primaryContact, newPrimaryContactId);
       }
-      allSortedPrimaryContacts.sort(
-        (a: Contact, b: Contact) =>
-          a.createdAt.getTime() - b.createdAt.getTime()
-      );
 
-      let createSecondaryContact =
-        matchingContacts.some((contact) => contact.email !== email) ||
+      let responseContact: Contact | null = allSortedPrimaryContacts[0];
+
+      //Check for new email/phoneNumber, if true create secondary contact
+      let contactExists =
+        matchingContacts.some((contact) => contact.email === email) &&
         matchingContacts.some(
-          (contact) => contact.phoneNumber !== phoneNumber?.toString()
+          (contact) => contact.phoneNumber === phoneNumber?.toString()
         );
 
-      //Create secondary contact if new email/phoneNumber is present
-      if (createSecondaryContact) {
+      if (!contactExists) {
         let secondaryContactData = {
           email,
           phoneNumber: phoneNumber?.toString(),
           linkPrecedence: "secondary",
-          linkedTo: { connect: { id: allSortedPrimaryContacts[0]?.id } },
+          linkedTo: { connect: { id: newPrimaryContactId } },
         };
-        const newSecondaryContact = await prisma.contact.create({
+        responseContact = await prisma.contact.create({
           data: secondaryContactData,
           include: contactInclude,
         });
-        response = generateResponseObject(newSecondaryContact.linkedTo);
-        res.status(200).json({ contact: response });
-      }
-
-      // If need to convert primary into secondary contact, which is only possible if email and phoneNumber are present
-      if (email && phoneNumber && allSortedPrimaryContacts.length > 1) {
-        const newPrimaryContactId = allSortedPrimaryContacts[0]?.id;
-
-        for (const primaryContact of allSortedPrimaryContacts.slice(1)) {
-          await updateContactLinkPrecedence(
-            primaryContact,
-            newPrimaryContactId
-          );
-        }
-        const updatedPrimaryContact = await prisma.contact.findUnique({
+      } else {
+        responseContact = await prisma.contact.findUnique({
           where: { id: newPrimaryContactId },
           include: contactInclude,
         });
-
-        response = generateResponseObject(updatedPrimaryContact);
-        res.status(200).json({ contact: response });
-      } else {
-        // Either phoneNumber or email only are present
-        response = generateResponseObject(allSortedPrimaryContacts[0]);
-        res.status(200).json({ contact: response });
       }
+
+      response = generateResponseObject(responseContact);
+      res.status(200).json({ contact: response });
+    } else {
+      response = generateResponseObject(allSortedPrimaryContacts[0]);
+      res.status(200).json({ contact: response });
     }
   }
 
