@@ -164,6 +164,28 @@ router.post("/", async (req: Request, res: Response) => {
           a.createdAt.getTime() - b.createdAt.getTime()
       );
 
+      let createSecondaryContact =
+        matchingContacts.some((contact) => contact.email !== email) ||
+        matchingContacts.some(
+          (contact) => contact.phoneNumber !== phoneNumber?.toString()
+        );
+
+      //Create secondary contact if new email/phoneNumber is present
+      if (createSecondaryContact) {
+        let secondaryContactData = {
+          email,
+          phoneNumber: phoneNumber?.toString(),
+          linkPrecedence: "secondary",
+          linkedTo: { connect: { id: allSortedPrimaryContacts[0]?.id } },
+        };
+        const newSecondaryContact = await prisma.contact.create({
+          data: secondaryContactData,
+          include: contactInclude,
+        });
+        response = generateResponseObject(newSecondaryContact.linkedTo);
+        res.status(200).json({ contact: response });
+      }
+
       // If need to convert primary into secondary contact, which is only possible if email and phoneNumber are present
       if (email && phoneNumber && allSortedPrimaryContacts.length > 1) {
         const newPrimaryContactId = allSortedPrimaryContacts[0]?.id;
